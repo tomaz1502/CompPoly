@@ -219,7 +219,7 @@ lemma divByMonic_wf_termination (p q : CPolynomial.Raw R)
 def divModByMonicAux (p q : CPolynomial.Raw R) : CPolynomial.Raw R × CPolynomial.Raw R :=
   if hq : q.monic = true then
     go p q hq
-  else ⟨0, 0⟩
+  else ⟨0, p⟩
 where
   go (p q : CPolynomial.Raw R) (hq : q.monic = true) : CPolynomial.Raw R × CPolynomial.Raw R :=
     if h : q.trim.size ≤ p.trim.size ∧ 0 < p.trim.size then
@@ -433,8 +433,9 @@ variable [Field R] [BEq R] [LawfulBEq R]
 
 namespace Raw
 
+omit [BEq R] [LawfulBEq R] in
 /-- Multiplication by a constant commutes with `Polynomial.divByMonic` -/
-lemma Polynomial.C_mul_divByMonic_eq {R : Type*} [Field R] (a : R) (p q : R[X]) (hq : q.Monic) :
+lemma Polynomial.C_mul_divByMonic_eq (a : R) (p q : R[X]) (hq : q.Monic) :
     (Polynomial.C a * p) /ₘ q = Polynomial.C a * (p /ₘ q) := by
   by_cases ha : a = 0
   · simp [ha]
@@ -445,7 +446,7 @@ lemma Polynomial.C_mul_divByMonic_eq {R : Type*} [Field R] (a : R) (p q : R[X]) 
       by rw [Polynomial.degree_C_mul ha]; exact Polynomial.degree_modByMonic_lt p hq⟩).1
 
 /-- The zero polynomial is not monic -/
-private lemma not_monic_of_toPoly_zero (q : CPolynomial.Raw R)
+private lemma not_monic_of_toPoly_zero (q : Raw R)
     (hq' : q.toPoly = 0) : ¬ (C q.leadingCoeff⁻¹ * q).monic = true := by
   intro h
   have := (monic_iff_toPoly_monic _).mp h
@@ -454,7 +455,7 @@ private lemma not_monic_of_toPoly_zero (q : CPolynomial.Raw R)
   simp [Polynomial.Monic] at this
 
 /-- If `q` is not the zero Raw polynomial, multiplying it by the inverse of its leading coefficient results in a monic polynomial -/
-private lemma monic_raw_of_toPoly_ne_zero (q : CPolynomial.Raw R)
+private lemma monic_raw_of_toPoly_ne_zero (q : Raw R)
     (hq' : q.toPoly ≠ 0) : (C q.leadingCoeff⁻¹ * q).monic = true := by
   rw [monic_iff_toPoly_monic, toPoly_mul, toPoly_C, leadingCoeff_toPoly]
   have := Polynomial.monic_mul_leadingCoeff_inv hq'
@@ -462,14 +463,30 @@ private lemma monic_raw_of_toPoly_ne_zero (q : CPolynomial.Raw R)
 
 omit [BEq R] [LawfulBEq R] in
 /-- If `q` is not the zero Rpolynomial, multiplying it by the inverse of its leading coefficient results in a monic polynomial -/
-private lemma monic_poly_of_toPoly_ne_zero (q : CPolynomial.Raw R)
+private lemma monic_poly_of_toPoly_ne_zero (q : Raw R)
     (hq' : q.toPoly ≠ 0) :
     (Polynomial.C q.toPoly.leadingCoeff⁻¹ * q.toPoly).Monic := by
   have := Polynomial.monic_mul_leadingCoeff_inv hq'
   rwa [_root_.mul_comm] at this
 
+lemma leadingCoeff_zero : (0 : Raw R).leadingCoeff = 0 := by
+  rw [leadingCoeff_toPoly]
+  trivial
+
+theorem mod_zero_raw (p : Raw R) : mod p 0 = p := by
+  unfold mod
+  have : C (Inv.inv (leadingCoeff (0 : Raw R))) * 0 = 0 := Raw.mul_zero (C (leadingCoeff 0)⁻¹)
+  rw [this]
+  unfold modByMonic divModByMonicAux monic
+  split_ifs
+  next H =>
+    simp only [beq_iff_eq] at H
+    rw [leadingCoeff_zero] at H
+    simp_all only [zero_def, zero_ne_one]
+  next H => rfl
+
 /-- `Raw.div` matches `Polynomial.div` with respect to `toPoly` -/
-theorem div_toPoly (p q : CPolynomial.Raw R) :
+theorem div_toPoly (p q : Raw R) :
     (div p q).toPoly = (Polynomial.div p.toPoly q.toPoly) := by
   unfold div
   by_cases hq' : q.toPoly = 0
@@ -488,7 +505,7 @@ theorem div_toPoly (p q : CPolynomial.Raw R) :
     ring_nf
 
 /-- `Raw.mod` matches `Polynomial.mod` with respect to `toPoly` -/
-theorem mod_toPoly (p q : CPolynomial.Raw R) (hq : q.toPoly ≠ 0) :
+theorem mod_toPoly (p q : Raw R) (hq : q.toPoly ≠ 0) :
     (mod p q).toPoly = (Polynomial.mod p.toPoly q.toPoly) := by
   unfold mod
   rw [modByMonic_toPoly _ _ (monic_raw_of_toPoly_ne_zero q hq)]
@@ -498,6 +515,16 @@ theorem mod_toPoly (p q : CPolynomial.Raw R) (hq : q.toPoly ≠ 0) :
 
 end Raw
 
+theorem mod_zero (p : CPolynomial R) : CPolynomial.mod p 0 = p := by
+  unfold CPolynomial.mod
+  have H := Raw.mod_zero_raw p.val
+  have : (0 : CPolynomial R).val = (0 : CPolynomial.Raw R) := by trivial
+  simp only [this, Raw.zero_def]
+  simp only [Raw.zero_def] at H
+  congr
+  rw [H]
+  grind
+
 /-- `div` matches `Polynomial.div` with respect to `toPoly` -/
 theorem div_toPoly (p q : CPolynomial R) :
     (div p q).toPoly = (Polynomial.div p.toPoly q.toPoly) := by
@@ -506,18 +533,25 @@ theorem div_toPoly (p q : CPolynomial R) :
   exact Raw.div_toPoly p.val q.val
 
 /-- `mod` matches `Polynomial.mod` with respect to `toPoly` -/
-theorem mod_toPoly (p q : CPolynomial R) (hq : q ≠ 0) :
+theorem mod_toPoly (p q : CPolynomial R) :
     (mod p q).toPoly = (Polynomial.mod p.toPoly q.toPoly) := by
-  show (Raw.mod p.val q.val).trim.toPoly = _
-  rw [Raw.toPoly_trim]
-  have hq_val : q.val.toPoly ≠ 0 := by
-    intro h
-    apply hq
-    apply CPolynomial.ext
-    have hsize := (Raw.trim_size_zero_iff_toPoly_zero q.val).mpr h
-    rw [q.property] at hsize
-    exact Array.eq_empty_of_size_eq_zero hsize
-  exact Raw.mod_toPoly p.val q.val hq_val
+  if hq: q = 0 then
+    have : (0 : CPolynomial R).toPoly = 0 := by trivial
+    rw [hq, mod_zero, this]
+    have : p.toPoly.mod 0 = p.toPoly % 0 := coeff_inj.mp rfl
+    rw [this]
+    exact Eq.symm (EuclideanDomain.mod_zero p.toPoly)
+  else
+    show (Raw.mod p.val q.val).trim.toPoly = _
+    rw [Raw.toPoly_trim]
+    have hq_val : q.val.toPoly ≠ 0 := by
+      intro h
+      apply hq
+      apply CPolynomial.ext
+      have hsize := (Raw.trim_size_zero_iff_toPoly_zero q.val).mpr h
+      rw [q.property] at hsize
+      exact Array.eq_empty_of_size_eq_zero hsize
+    exact Raw.mod_toPoly p.val q.val hq_val
 
 end DivMod
 
